@@ -41,6 +41,15 @@ def detrend_separate_check(da, dim, period):
     return xr.apply_ufunc(detrend1d_check, da, input_core_dims=[[dim]], output_core_dims=[[dim]], kwargs=dict(period=period), vectorize=True, dask='parallelized')
 
 
+
+def detrend_rolling_window(da, window_size=30):
+    pad_size=window_size//2
+    padded_data = da.pad(time=(pad_size, pad_size), mode='edge')
+    smoothed_data = padded_data.rolling(time=window_size, center=True).mean('time').isel(time = slice(int(window_size/2),-int(window_size/2)))
+    return da - smoothed_data
+
+
+
 def detrend_dim(da, dim, deg=1):
     # detrend along a single dimension
     p = da.polyfit(dim=dim, deg=deg)
