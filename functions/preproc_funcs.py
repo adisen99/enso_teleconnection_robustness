@@ -81,16 +81,22 @@ def calc_anom_annual(
 
 # functions to calculate correlation value
 def get_corr_1d(x, y):
-    statistic, _ = stats.spearmanr(x, y)
+    xx = x[~(np.isnan(x) & np.isnan(y))]
+    yy = y[~(np.isnan(x) & np.isnan(y))]
+    statistic, _ = stats.spearmanr(xx, yy)
     return statistic
 
 def get_regr_1d(x, y):
-    res = stats.linregress(x, y)
+    xx = x[~(np.isnan(x) & np.isnan(y))]
+    yy = y[~(np.isnan(x) & np.isnan(y))]
+    res = stats.linregress(xx, yy)
     return res.slope
 
 
 def get_pval_1d(x, y):
-    _, pval = stats.spearmanr(x, y)
+    xx = x[~(np.isnan(x) & np.isnan(y))]
+    yy = y[~(np.isnan(x) & np.isnan(y))]
+    _, pval = stats.spearmanr(xx, yy)
     return pval
 
 
@@ -102,6 +108,83 @@ def get_regr(x, y, dim):
 
 def get_pval(x, y, dim):
     return xr.apply_ufunc(get_pval_1d, x, y, input_core_dims=[[dim], [dim]], vectorize=True, dask = 'parallelized')
+
+
+
+### combiene the individual operations above into one neat function
+def telemetrics_1d(x, y):
+    mask = ~(np.isnan(x) | np.isnan(y))
+    xx = x[mask]
+    yy = y[mask]
+
+    if len(xx) < 3:
+        return np.nan, np.nan, np.nan
+
+    # regression
+    slope, _, _, _, _ = stats.linregress(xx, yy)
+
+    # spearman corr + pval
+    corr, pval = stats.spearmanr(xx, yy)
+
+    return slope, corr, pval
+
+
+
+def telemetrics_fast(x, y):
+    mask = ~(np.isnan(x) | np.isnan(y))
+    xx = x[mask]
+    yy = y[mask]
+
+    n = len(xx)
+    if n < 3:
+        return np.nan, np.nan, np.nan
+
+    # ----------- regression slope (NumPy) -----------
+    x_mean = xx.mean()
+    y_mean = yy.mean()
+    slope = np.dot(xx - x_mean, yy - y_mean) / np.dot(xx - x_mean, xx - x_mean)
+
+    # ----------- Spearman corr (NumPy) -----------
+    # Rank (argsort twice) – MUCH faster than scipy.spearmanr
+    rx = np.argsort(np.argsort(xx))
+    ry = np.argsort(np.argsort(yy))
+
+    rx = rx - rx.mean()
+    ry = ry - ry.mean()
+    corr = np.dot(rx, ry) / np.sqrt(np.dot(rx, rx) * np.dot(ry, ry))
+
+    # p-value is very expensive → use analytic t-approximation
+    df = n - 2
+    t = corr * np.sqrt(df / (1 - corr**2))
+    pval = 2 * stats.t.sf(np.abs(t), df=df)
+
+    return slope, corr, pval
+
+
+
+# def get_all_metrics(x, y, dim):
+#     return xr.apply_ufunc(
+#         telemetrics_1d,
+#         x, y,
+#         input_core_dims=[[dim], [dim]],
+#         output_core_dims=[[], [], []],
+#         vectorize=True,
+#         dask="parallelized",
+#         output_dtypes=[np.float64, np.float64, np.float64],
+#     )
+
+
+def get_all_metrics(x, y, dim):
+    return xr.apply_ufunc(
+        telemetrics_fast,
+        x, y,
+        input_core_dims=[[dim], [dim]],
+        output_core_dims=[[], [], []],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.float64, np.float64, np.float64],
+    )
+
 
 
 # making 3d version of mann whitney u test
