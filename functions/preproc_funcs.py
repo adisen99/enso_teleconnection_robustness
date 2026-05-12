@@ -187,13 +187,20 @@ def get_all_metrics(x, y, dim):
 
 
 
-# making 3d version of mann whitney u test
 def mannwhitneyu1d(dist1, dist2):
+    # guard against empty or constant samples
+    if len(dist1) < 2 or len(dist2) < 2:
+        return np.nan
     return float(stats.mannwhitneyu(dist1, dist2).pvalue)
 
-
 def mannwhitneyu3d(da1, da2, dim):
-    return xr.apply_ufunc(mannwhitneyu1d, da1, da2, input_core_dims=[[dim], [dim]], exclude_dims={dim, dim}, vectorize=True, dask='parallelized')
+    return xr.apply_ufunc(
+        mannwhitneyu1d, da1, da2,
+        input_core_dims=[[dim], [dim]],
+        exclude_dims={dim},
+        vectorize=True,
+        dask='allowed'
+    )
 
 
 def calc_trend1d(x: np.ndarray):
